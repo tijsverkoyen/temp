@@ -1,0 +1,75 @@
+<p>Fork CMS is a loved tool for developers who create websites of any size. Even big e-commerce shops. That's exactly what we are doing at&nbsp;<a href="http://www.siesqo.be" target="_blank">SIESQO</a>. We have been using Fork CMS to create websites/webshops since 2011 and for a client of us we needed to create an e-commerce website with very fast caching of large custom arrays.</em></p>
+<h2>
+	What is Redis?</h2>
+<p>
+	<a href="http://redis.io" target="_blank">Redis</a> is an open source (BSD licensed), in-memory data structure store, used as database, cache and message broker. It supports data structures such as strings, hashes, lists, sets, sorted sets with range queries, bitmaps, hyperloglogs and geospatial indexes with radius queries. Redis has built-in replication, Lua scripting, LRU eviction, transactions and different levels of on-disk persistence, and provides high availability via Redis Sentinel and automatic partitioning with Redis Cluster.</p>
+<h2>
+	Why did we use Redis in Fork CMS?</h2>
+<h3>
+	The situation</h3>
+<p>
+	We needed to create a (huge) webshop in Fork CMS, depending on external software for its ten thousands of products and categories. Unfortunately that external database was missing important tree-structure information about how the website should show categories and its products. So when the import of categories and products is done, a cronjob needs to run a CacheBuilder script. Which is actually a class that contains how the website tree structure should be build. All products and categories need to be fetched from the database and then added into arrays for every "category-combination" filters.</p>
+<h3>
+	Filesystem is a no-go in this situation</h3>
+<p>
+	I used the default "cache.adapter" filesystem to save these arrays (in files). Working locally that was allright, but not uber fast. Since the webshop is propably going to receive thousands of visitors. I wanted something faster... Using Redis would make it blazingly fast.</p>
+<h2>
+	How did we integrate Redis in Fork CMS?</h2>
+<p>
+	In the Fork CMS `/app/config/config.yml` file you can find the following.</p>
+<pre><code>cache.filesystem.adapter:
+    class: League\Flysystem\Adapter\Local
+    arguments:
+        - %kernel.cache_dir%
+cache.filesystem.filesystem:
+    class: League\Flysystem\Filesystem
+    arguments:
+        - "@cache.filesystem.adapter"
+cache.adapter:
+    class: MatthiasMullie\Scrapbook\Adapters\Flysystem
+    arguments:
+        - "@cache.filesystem.filesystem"
+cache.buffer:
+    class: MatthiasMullie\Scrapbook\Buffered\BufferedStore
+    arguments:
+        - "@cache.adapter"
+cache.pool:
+    class: MatthiasMullie\Scrapbook\Psr6\Pool
+    arguments:
+        - "@cache.buffer" </code></pre>
+<p>
+	At first we converted the above to be using Redis. But this gave us some issues in the import script.</p>
+<p>
+	Thats why we decided to add extra config rules for redis + cache builder. In the Fork CMS /app/config/config.yml file we added the following.</p>
+<pre><code># Caching using Redis Adapter
+products_cache.redis.adapter:
+    class: Redis
+    calls:
+        - [connect, ['%redis.server%', '%redis.port%']]
+        - [auth, ['%redis.password%']]
+        - [select, ['%redis.database_index%']]
+products_cache.adapter:
+    class: MatthiasMullie\Scrapbook\Adapters\Redis
+    arguments:
+        - "@products_cache.redis.adapter"
+products_cache.buffer:
+    class: MatthiasMullie\Scrapbook\Buffered\BufferedStore
+    arguments:
+        - "@products_cache.adapter"
+products_cache.pool:
+    class: MatthiasMullie\Scrapbook\Psr6\Pool
+    arguments:
+        - "@products_cache.buffer"</code> </pre>
+<p>
+	In the Fork CMS /app/config/parameters.yml file we added the following.</p>
+<pre><code>redis.server:           127.0.0.1
+redis.port:             6379
+redis.password:             # This is by default null
+redis.database_index:   0   # This is by default 0, I've used 1 for my staging environment</code></pre>
+<p>
+	The next thing was to install Redis locally, so I could start testing things. <a href="https://gist.github.com/jeroendesloovere/be002d64cd6c73f5435da49ceb2d6b93" target="_blank">Here is how I installed Redis locally + MAMP On the server</a>, my hosting provider activated Redis and just gave me the redis.server/port and password.</p>
+<p>
+	Once you have installed Redis, the website will fly like never before.</p>
+<p>
+	I hope you liked the article.<br>
+	You can ask questions below or follow me on <a href="http://github.com/jeroendesloovere" target="_blank">GitHub</a>&nbsp;or&nbsp;<a href="https://twitter.com/desloovere_j" target="_blank">Twitter (@desloovere_j)</a>.</p>
